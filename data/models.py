@@ -46,6 +46,14 @@ class AnalysisResult:
     is_fallback: bool = False
     """True when AI analysis was unavailable and a fallback was used."""
 
+    fallback_reason: str = ""
+    """Short error category string when is_fallback=True (e.g. 'model_not_found').
+    Safe to display; contains no secrets. Empty when analysis succeeded."""
+
+    fallback_debug: str = ""
+    """Sanitized exception message when is_fallback=True.
+    Secrets are redacted. Shown only in the developer diagnostic expander."""
+
 
 @dataclass
 class DetectiveScenario:

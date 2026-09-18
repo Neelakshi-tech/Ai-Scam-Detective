@@ -5,6 +5,8 @@ and receives a structured risk assessment with highlighted evidence,
 tactic explanations, safe actions, and an educational takeaway.
 """
 
+import os
+
 import streamlit as st
 
 from ai.ai_analyzer import AIAnalyzer
@@ -180,6 +182,7 @@ def _render_result(result, input_text: str) -> None:
 
     if result.is_fallback:
         render_fallback_notice()
+        _render_dev_diagnostic(result)
 
     # ------------------------------------------------------------------
     # Risk badge + uncertainty note
@@ -240,6 +243,56 @@ def _render_result(result, input_text: str) -> None:
         "It does not constitute legal or security advice, and cannot definitively confirm fraud. "
         "When in doubt, contact the organisation directly through their official website or app."
     )
+
+
+def _render_dev_diagnostic(result) -> None:
+    """Show a collapsible developer diagnostic panel when analysis falls back.
+
+    Displays sanitized error information — never reveals API keys or secrets.
+    Intended for developers/hackathon judges to understand why AI failed.
+    Hidden inside an expander so it does not disrupt the normal user experience.
+    """
+    reason = getattr(result, "fallback_reason", "") or "unknown"
+    debug_msg = getattr(result, "fallback_debug", "") or ""
+
+    # Friendly labels for each error category
+    reason_labels: dict[str, tuple[str, str]] = {
+        "no_api_key":      ("🔑 No API Key",        "GEMINI_API_KEY is missing or set to the placeholder value in .env"),
+        "transient":       ("🔄 Temporary Unavailable", "Gemini returned a 503/502 error. All retries exhausted. Try again shortly."),
+        "model_not_found": ("📛 Model Not Found",    "The Gemini model name in the code is no longer available or was renamed."),
+        "auth_error":      ("🚫 Authentication Error", "The API key was rejected (invalid, expired, or wrong key type)."),
+        "quota_exceeded":  ("⏱️ Quota Exceeded",     "The API rate limit or daily quota has been reached."),
+        "api_error":       ("⚠️ Gemini API Error",   "The Gemini API returned an unexpected HTTP error."),
+        "parse_fail":      ("🔍 Response Parse Error", "The AI response was received but could not be parsed as JSON."),
+        "network_error":   ("🌐 Network Error",      "Could not reach the Gemini API (connection, DNS, or timeout)."),
+        "unexpected":      ("❓ Unexpected Error",   "An unexpected error occurred during AI analysis."),
+    }
+    label, hint = reason_labels.get(reason, ("❓ Unknown Error", "An unknown error occurred."))
+
+    # Key status (present/absent/placeholder) — length only, never the value
+    api_key = os.getenv("GEMINI_API_KEY", "")
+    placeholder = "your_gemini_api_key_here"
+    if not api_key:
+        key_status = "❌ Not present (GEMINI_API_KEY missing from environment)"
+    elif api_key == placeholder:
+        key_status = "❌ Placeholder value (replace with a real key in .env)"
+    else:
+        key_status = f"✅ Present (length: {len(api_key)} characters)"
+
+    model_name = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
+
+    with st.expander("🛠️ Developer Diagnostic — click to expand", expanded=False):
+        st.markdown(f"**Error category:** {label}")
+        st.markdown(f"**Hint:** {hint}")
+        st.markdown(f"**API key status:** {key_status}")
+        st.markdown(f"**Model:** `{model_name}`")
+        if debug_msg:
+            st.markdown("**Sanitized error message:**")
+            st.code(debug_msg, language=None)
+        st.caption(
+            "This panel is for debugging only. API key values are never shown here. "
+            "Remove or disable this panel before deploying to production."
+        )
 
 
 @st.cache_resource
