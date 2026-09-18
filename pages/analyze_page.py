@@ -1,7 +1,8 @@
 """Analyze page — DETECT + EXPLAIN.
 
 The user pastes a suspicious message here, submits it for analysis,
-and receives a structured risk assessment.
+and receives a structured risk assessment with highlighted evidence,
+tactic explanations, safe actions, and an educational takeaway.
 """
 
 import streamlit as st
@@ -13,65 +14,101 @@ from ui.components import (
     render_disclaimer,
     render_fallback_notice,
     render_highlighted_message,
+    render_india_reporting,
     render_learn_card,
     render_risk_badge,
     render_risk_summary,
     render_tactic_cards,
+    render_uncertainty_note,
 )
 
 # ---------------------------------------------------------------------------
-# Demo messages for easy testing / hackathon demo
+# India-context demo messages (fictional details, educational purpose only)
 # ---------------------------------------------------------------------------
 
-DEMO_MESSAGES = {
+DEMO_MESSAGES: dict[str, str] = {
     "Select a demo…": "",
-    "🚚 Parcel Delivery Scam": (
-        "Royal Mail: Your parcel could not be delivered today. "
-        "A redelivery fee of £2.99 is required within 24 hours or your parcel "
-        "will be returned to sender. Pay immediately at: royalm4il-delivery-fees.com. "
-        "Failure to pay will result in a £15 storage charge."
+    "📦 Fake Delivery / Refund (UPI)": (
+        "Dear Customer, your Meesho order #MS4921 has been returned by courier. "
+        "To initiate your refund of ₹899, click: meesho-refund-secure.net "
+        "Enter your UPI ID and the OTP you receive. "
+        "Refund expires in 24 hours if not claimed. "
+        "Ignore this and we will cancel your account."
     ),
-    "💼 Fake Job Offer": (
-        "Hi! We found your CV on Indeed and would love to offer you a work-from-home position "
-        "earning up to £800 per day. No experience needed — full training provided. "
-        "To secure your spot, send a one-time registration fee of £49 via PayPal "
-        "and provide your bank account details for payroll setup. Offer expires tonight!"
+    "🏦 Fake KYC / Bank SMS": (
+        "ALERT: Your SBI account has been suspended due to incomplete KYC. "
+        "To restore access, verify now at: sbi-kyc-verify.info "
+        "You will need your account number, ATM PIN, and Aadhaar OTP. "
+        "Non-compliance within 6 hours will result in permanent account closure. "
+        "This is a mandatory directive. — SBI Customer Care"
     ),
-    "🏦 Bank Impersonation": (
-        "URGENT: Barclays Security Team — Unusual activity has been detected on your account. "
-        "Your account has been temporarily suspended to protect you. "
-        "To restore access, verify your identity at: barclays-secure-verify.net "
-        "You will need your card number, PIN, and the one-time passcode sent to your phone. "
-        "If you do not verify within 2 hours your account will be permanently closed."
+    "💼 Fake Work-from-Home Job": (
+        "Hello! We came across your profile on LinkedIn. "
+        "We are hiring for a remote data-entry position paying ₹45,000/month. "
+        "No qualifications required. Training provided. "
+        "To register, pay ₹599 via Google Pay and send a screenshot to this number. "
+        "Also share your bank IFSC and account number for salary processing. "
+        "Offer valid only until midnight tonight. Only 5 openings left!"
     ),
-    "🎁 Prize Winner Scam": (
-        "Congratulations! You have been selected as our lucky winner this month. "
-        "To claim your £500 Amazon gift card, simply reply with your full name, "
-        "home address and date of birth. This offer is valid for 48 hours only."
+    "🏛️ Fake Income Tax Refund": (
+        "NOTICE: Income Tax Department — A refund of ₹12,340 is pending for PAN CXXXS9876G. "
+        "Claim at: incometax-refundportal.com within 48 hours to avoid cancellation. "
+        "Enter your bank account details, IFSC, and Aadhaar number to proceed. "
+        "Failure to respond will result in a scrutiny notice."
     ),
-    "📅 Benign Message (Low Risk)": (
-        "Hi, just a reminder that your dentist appointment is tomorrow at 10am. "
-        "Please call us on 01234 567890 if you need to reschedule. See you then!"
+    "🎁 Fake Prize / Lucky Draw": (
+        "Congratulations! You have been selected as the winner of KBC Season 16. "
+        "Your prize amount is ₹25 Lakh. "
+        "To claim, call 09876543210 and pay a processing fee of ₹2,500 via PhonePe. "
+        "Share your full name, date of birth, and Aadhaar number to verify your identity. "
+        "Offer valid for 48 hours only. Limited slots available!"
+    ),
+    "📅 Normal Message (Low Risk)": (
+        "Hi, your HDFC Bank statement for the month of May is ready. "
+        "You can view it by logging into your NetBanking account at hdfcbank.com. "
+        "If you need help, call our official customer care at 1800-202-6161. "
+        "Do not share your OTP or password with anyone."
     ),
 }
 
 
 def render() -> None:
     """Render the full Analyze page."""
-    st.header("🔍 Scam Analyzer")
+    # ------------------------------------------------------------------
+    # Product hero
+    # ------------------------------------------------------------------
     st.markdown(
-        "Paste a suspicious message below — an SMS, email, job offer, delivery notice, "
-        "or anything that doesn't feel right. We'll break down what looks suspicious and why."
+        """
+        <div style="padding: 8px 0 18px 0;">
+            <h1 style="margin:0; font-size:1.9rem;">🕵️ AI Scam Detective</h1>
+            <p style="margin:4px 0 0 0; color:#555; font-size:1rem;">
+                Paste any suspicious message — SMS, WhatsApp, email, or job offer —
+                and we'll break down <strong>exactly what looks suspicious and why</strong>.
+            </p>
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
+
+    st.header("🔍 Analyze a Message")
 
     render_disclaimer()
 
-    # Demo message selector
+    # ------------------------------------------------------------------
+    # Demo selector — changing demo clears any previous result (B2 fix)
+    # ------------------------------------------------------------------
     demo_choice = st.selectbox(
-        "Or load a demo message:",
+        "Load a demo message to try:",
         options=list(DEMO_MESSAGES.keys()),
         key="analyze_demo_select",
     )
+
+    # Clear stale result when the user switches to a different demo
+    prev_demo = st.session_state.get("analyze_prev_demo")
+    if prev_demo != demo_choice:
+        st.session_state["analyze_result"] = None
+        st.session_state["analyze_input_text"] = ""
+        st.session_state["analyze_prev_demo"] = demo_choice
 
     default_text = DEMO_MESSAGES.get(demo_choice, "")
 
@@ -80,7 +117,10 @@ def render() -> None:
         value=default_text,
         height=160,
         max_chars=2000,
-        placeholder="e.g. 'Your parcel could not be delivered. Pay £2.99 at fake-link.com'",
+        placeholder=(
+            "e.g. 'Your KYC is incomplete. Click here to update: fake-bank-link.in. "
+            "Your account will be blocked in 24 hours.'"
+        ),
         key="analyze_message_input",
     )
 
@@ -104,7 +144,8 @@ def render() -> None:
     with col_clear:
         if st.button("Clear", use_container_width=True):
             st.session_state["analyze_result"] = None
-            st.session_state["analyze_message_input"] = ""
+            st.session_state["analyze_input_text"] = ""
+            st.session_state["analyze_prev_demo"] = None
             st.rerun()
 
     # Run analysis when button is clicked
@@ -140,25 +181,54 @@ def _render_result(result, input_text: str) -> None:
     if result.is_fallback:
         render_fallback_notice()
 
+    # ------------------------------------------------------------------
+    # Risk badge + uncertainty note
+    # ------------------------------------------------------------------
     render_risk_badge(result.risk_level)
     render_risk_summary(result.risk_summary)
+    render_uncertainty_note(len(result.tactics), result.is_fallback)
 
-    # Highlighted message
+    # ------------------------------------------------------------------
+    # Highlighted message — shown FIRST as the investigation centrepiece
+    # ------------------------------------------------------------------
     if not result.is_fallback and input_text:
-        st.markdown("#### Your message — suspicious phrases highlighted:")
+        tactic_count = len(result.tactics)
+        if tactic_count > 0:
+            label = (
+                f"#### 🔍 Your message — "
+                f"**{tactic_count} warning sign{'s' if tactic_count != 1 else ''} highlighted**"
+            )
+        else:
+            label = "#### 🔍 Your message — no warning signs highlighted"
+        st.markdown(label)
         all_quotes = [q for tactic in result.tactics for q in tactic.evidence_quotes]
         render_highlighted_message(input_text, all_quotes)
 
-    # Detected tactics
+    # ------------------------------------------------------------------
+    # Detected tactics (collapsed by default)
+    # ------------------------------------------------------------------
     if not result.is_fallback:
-        st.markdown("#### ⚠️ Warning Signs Detected")
+        tactic_count = len(result.tactics)
+        if tactic_count > 0:
+            st.markdown(f"#### ⚠️ {tactic_count} Warning Sign{'s' if tactic_count != 1 else ''} Detected")
+        else:
+            st.markdown("#### ⚠️ Warning Signs")
         render_tactic_cards(result.tactics)
 
-    # Recommended actions
-    st.markdown("#### ✅ What You Should Do")
+    # ------------------------------------------------------------------
+    # What should I do?
+    # ------------------------------------------------------------------
+    st.markdown("#### ✅ What Should I Do?")
     render_actions(result.recommended_actions)
 
+    # India reporting block — shown for Medium and High risk only
+    if result.risk_level in ("Medium", "High"):
+        st.markdown("")
+        render_india_reporting()
+
+    # ------------------------------------------------------------------
     # Educational takeaway
+    # ------------------------------------------------------------------
     if result.learn_tactic_id:
         st.markdown("#### 📚 Learn About This Tactic")
         render_learn_card(result.learn_tactic_id)
@@ -168,11 +238,11 @@ def _render_result(result, input_text: str) -> None:
     st.caption(
         "⚠️ This tool provides risk-oriented guidance for educational awareness only. "
         "It does not constitute legal or security advice, and cannot definitively confirm fraud. "
-        "When in doubt, contact the organisation directly through their official website."
+        "When in doubt, contact the organisation directly through their official website or app."
     )
 
 
 @st.cache_resource
 def _get_analysis_service() -> AnalysisService:
-    """Create and cache the AnalysisService (creates one AIAnalyzer per session)."""
+    """Create and cache the AnalysisService (creates one AIAnalyzer per app run)."""
     return AnalysisService(AIAnalyzer())

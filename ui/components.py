@@ -4,6 +4,7 @@ All functions in this module are pure presentational helpers.
 They accept data objects and render Streamlit UI — no business logic.
 """
 
+import html
 import re
 
 import streamlit as st
@@ -73,6 +74,7 @@ def render_risk_badge(risk_level: str) -> None:
         risk_level: One of 'Low', 'Medium', 'High', or 'Unknown'.
     """
     cfg = _RISK_CONFIG.get(risk_level, _RISK_CONFIG["Unknown"])
+    # All values are internal constants — safe to interpolate directly.
     st.markdown(
         f"""
         <div style="
@@ -98,6 +100,41 @@ def render_risk_badge(risk_level: str) -> None:
     )
 
 
+def render_uncertainty_note(tactic_count: int, is_fallback: bool) -> None:
+    """Render a short AI-uncertainty note below the risk badge.
+
+    This communicates clearly that risk assessment is based on pattern
+    recognition and is not proof of fraud. This is always shown.
+
+    Args:
+        tactic_count: Number of tactics detected (0 = no signals found).
+        is_fallback:  True when AI analysis was unavailable.
+    """
+    if is_fallback:
+        return  # Fallback notice is shown separately
+
+    if tactic_count == 0:
+        note = (
+            "No warning patterns were detected in this message. "
+            "This does not guarantee the message is safe — always use your judgment "
+            "and verify through official channels if you are uncertain."
+        )
+    elif tactic_count == 1:
+        note = (
+            f"**{tactic_count} warning pattern** was identified by AI analysis. "
+            "This is based on language patterns, not verified facts. "
+            "Independently verify any unexpected request before taking action."
+        )
+    else:
+        note = (
+            f"**{tactic_count} warning patterns** were identified by AI analysis. "
+            "This is based on language patterns, not verified facts. "
+            "Independently verify any unexpected request before taking action."
+        )
+
+    st.caption(f"ℹ️ {note}")
+
+
 def render_risk_summary(summary: str) -> None:
     """Render the AI's plain-English risk summary sentence.
 
@@ -112,35 +149,57 @@ def render_highlighted_message(text: str, all_quotes: list[str]) -> None:
     """Render the original message with suspicious phrases highlighted.
 
     Uses HTML <mark> tags via unsafe_allow_html. Only quotes that
-    literally appear in the text are highlighted.
+    literally appear in the text are highlighted (validation is already
+    done upstream by AnalysisService._filter_evidence_quotes, but this
+    function also checks defensively).
+
+    The replacement uses a lambda to avoid regex backreference injection
+    (B4 fix): if a quote string contains backslash sequences like \\1,
+    passing it as a replacement string to re.sub would be misinterpreted.
+    Using a lambda makes the replacement literal.
 
     Args:
         text:       The original (sanitized) message text.
         all_quotes: Flat list of evidence quote strings to highlight.
     """
     if not all_quotes:
-        st.markdown(f"```\n{text}\n```")
+        # No highlights — render in a plain pre-formatted box
+        st.markdown(
+            f'<div style="background-color:#f8f9fa; border:1px solid #dee2e6; '
+            f'border-radius:6px; padding:14px; font-size:0.95rem; line-height:1.6; '
+            f'white-space:pre-wrap;">{html.escape(text)}</div>',
+            unsafe_allow_html=True,
+        )
         return
 
-    highlighted = text
-    # Sort by length descending to avoid partial replacements of shorter quotes
-    # that are substrings of longer ones.
-    sorted_quotes = sorted(all_quotes, key=len, reverse=True)
+    # HTML-escape the full message first so user input cannot inject tags.
+    highlighted = html.escape(text)
+
+    # Sort by length descending to avoid partial replacements of shorter
+    # quotes that are substrings of longer ones.
+    sorted_quotes = sorted(set(all_quotes), key=len, reverse=True)
 
     for quote in sorted_quotes:
-        if quote and quote in highlighted:
-            escaped = re.escape(quote)
-            highlighted = re.sub(
-                escaped,
-                f'<mark style="background-color:#fff176; padding:1px 2px; border-radius:3px;">'
-                f"{quote}</mark>",
-                highlighted,
-            )
+        if not quote:
+            continue
+        escaped_quote = html.escape(quote)
+        if escaped_quote not in highlighted:
+            continue
+        pattern = re.escape(escaped_quote)
+        mark_open = '<mark style="background-color:#fff176; padding:1px 2px; border-radius:3px;">'
+        mark_close = "</mark>"
+        # Use a lambda so the replacement is treated as a literal string,
+        # not as a regex replacement pattern (fixes B4 backreference bug).
+        highlighted = re.sub(
+            pattern,
+            lambda m, o=mark_open, c=mark_close, q=escaped_quote: f"{o}{q}{c}",
+            highlighted,
+        )
 
     st.markdown(
-        f'<div style="'
-        f"background-color:#f8f9fa; border:1px solid #dee2e6; border-radius:6px; "
-        f'padding:14px; font-size:0.95rem; line-height:1.6;">'
+        f'<div style="background-color:#f8f9fa; border:2px solid #f39c12; '
+        f'border-radius:6px; padding:14px; font-size:0.95rem; line-height:1.7; '
+        f'white-space:pre-wrap;">'
         f"{highlighted}</div>",
         unsafe_allow_html=True,
     )
@@ -148,6 +207,9 @@ def render_highlighted_message(text: str, all_quotes: list[str]) -> None:
 
 def render_tactic_cards(tactics: list[Tactic]) -> None:
     """Render one expandable card per detected tactic.
+
+    Cards are collapsed by default so the page does not become
+    overwhelming when many tactics are detected (U1 fix).
 
     Args:
         tactics: List of Tactic objects from the AnalysisResult.
@@ -158,17 +220,19 @@ def render_tactic_cards(tactics: list[Tactic]) -> None:
 
     for tactic in tactics:
         icon = TACTICS_LIBRARY.get(tactic.tactic_id, {}).get("icon", "⚠️")
-        with st.expander(f"{icon} {tactic.tactic_name}", expanded=True):
+        with st.expander(f"{icon} {tactic.tactic_name}", expanded=False):
             st.markdown(tactic.explanation)
 
             if tactic.evidence_quotes:
                 st.markdown("**Warning signs found in your message:**")
                 for quote in tactic.evidence_quotes:
+                    # Escape user-derived / AI-returned content before rendering HTML.
+                    safe_quote = html.escape(quote)
                     st.markdown(
                         f'<blockquote style="'
                         f"border-left:4px solid #e74c3c; margin:4px 0; "
                         f'padding:6px 12px; color:#555; font-style:italic;">'
-                        f'"{quote}"</blockquote>',
+                        f'"{safe_quote}"</blockquote>',
                         unsafe_allow_html=True,
                     )
 
@@ -185,6 +249,50 @@ def render_actions(actions: list[str]) -> None:
         st.markdown(f"✅ {action}")
 
 
+def render_india_reporting() -> None:
+    """Render the India-specific cybercrime reporting guidance block.
+
+    Only shown for Medium and High risk results. Links are to official
+    Indian government cybercrime resources. No government affiliation
+    or endorsement is claimed.
+    """
+    st.markdown(
+        """
+        <div style="
+            background-color: #fff8e1;
+            border: 1px solid #ffe082;
+            border-radius: 8px;
+            padding: 14px 18px;
+            font-size: 0.92rem;
+        ">
+            <strong>🇮🇳 Reporting in India</strong><br/>
+            If you believe this is a scam, you can report it through official channels:
+            <ul style="margin: 8px 0 0 0; padding-left: 18px;">
+                <li>
+                    <strong>National Cyber Crime Reporting Portal:</strong>
+                    <a href="https://cybercrime.gov.in" target="_blank" rel="noopener noreferrer">
+                        cybercrime.gov.in
+                    </a>
+                </li>
+                <li>
+                    <strong>Cyber Crime Helpline:</strong> Dial <strong>1930</strong>
+                    (Ministry of Home Affairs, India)
+                </li>
+                <li>
+                    <strong>Spam SMS / calls:</strong> Forward details to
+                    <strong>1909</strong> (TRAI DND registry)
+                </li>
+            </ul>
+            <span style="font-size:0.82rem; color:#888;">
+                This tool is not affiliated with or endorsed by any government body.
+                These are publicly available official reporting resources.
+            </span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def render_learn_card(tactic_id: str) -> None:
     """Look up and render the educational card for a tactic.
 
@@ -198,6 +306,8 @@ def render_learn_card(tactic_id: str) -> None:
         return
 
     icon = tactic.get("icon", "📚")
+    # All content here is from the static TACTICS_LIBRARY — safe to render directly.
+    # User input is never passed into this function.
     st.markdown(
         f"""
         <div style="

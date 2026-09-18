@@ -52,10 +52,28 @@ class TestAssessRisk:
         tactics = [make_tactic("REWARD"), make_tactic("URGENCY"), make_tactic("INFO_HARVEST")]
         assert assess_risk(tactics) == "Medium"
 
-    def test_impersonation_with_urgency_is_low(self):
-        # IMPERSONATION and URGENCY are both low-severity (2 = Low)
+    def test_impersonation_alone_returns_medium(self):
+        # IMPERSONATION is now high-severity -> at least Medium
+        assert assess_risk([make_tactic("IMPERSONATION")]) == "Medium"
+
+    def test_authority_alone_returns_medium(self):
+        # AUTHORITY is now high-severity -> at least Medium
+        assert assess_risk([make_tactic("AUTHORITY")]) == "Medium"
+
+    def test_impersonation_with_urgency_returns_medium(self):
+        # IMPERSONATION (high-severity) + URGENCY = Medium (1 high-severity tactic)
         tactics = [make_tactic("IMPERSONATION"), make_tactic("URGENCY")]
-        assert assess_risk(tactics) == "Low"
+        assert assess_risk(tactics) == "Medium"
+
+    def test_impersonation_with_fear_returns_high(self):
+        # Two high-severity tactics -> High
+        tactics = [make_tactic("IMPERSONATION"), make_tactic("FEAR")]
+        assert assess_risk(tactics) == "High"
+
+    def test_authority_with_suspicious_link_returns_high(self):
+        # Two high-severity tactics -> High
+        tactics = [make_tactic("AUTHORITY"), make_tactic("SUSPICIOUS_LINK")]
+        assert assess_risk(tactics) == "High"
 
 
 class TestEscalateRisk:

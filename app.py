@@ -36,6 +36,8 @@ if "detective_score_total" not in st.session_state:
     st.session_state["detective_score_total"] = 0
 if "detective_challenges_done" not in st.session_state:
     st.session_state["detective_challenges_done"] = 0
+if "detective_scored_ids" not in st.session_state:
+    st.session_state["detective_scored_ids"] = set()
 
 # ---------------------------------------------------------------------------
 # Sidebar navigation

@@ -3,11 +3,14 @@
 The user inspects a pre-written sample scam message, selects which
 phrases look suspicious, submits their selection, and receives a score
 with a full explanation of the scam tactics used.
+
+Score-inflation fix (B5): each scenario is counted only once per session.
+Retrying a scenario does not increment the challenge count or recalculate
+the session average.
 """
 
 import streamlit as st
 
-from data.tactics_library import TACTICS_LIBRARY
 from services.detective_service import DetectiveService
 from ui.components import render_learn_card
 
@@ -19,16 +22,22 @@ def render() -> None:
     st.header("🕵️ Detective Mode")
     st.markdown(
         "Think like a scam detective! Read the sample message below and select every phrase "
-        "that looks suspicious. Submit your choices to find out how many clues you spotted."
+        "that looks suspicious. Submit your choices to find out how many clues you spotted "
+        "— and learn exactly why each one is a warning sign."
     )
 
-    # Session state initialisation
+    # Session state initialisation (also set in app.py, but defensive here)
     if "detective_score_total" not in st.session_state:
         st.session_state["detective_score_total"] = 0
     if "detective_challenges_done" not in st.session_state:
         st.session_state["detective_challenges_done"] = 0
+    # Set of scenario IDs already scored this session (prevents inflation on retry)
+    if "detective_scored_ids" not in st.session_state:
+        st.session_state["detective_scored_ids"] = set()
 
+    # ------------------------------------------------------------------
     # Scenario selector
+    # ------------------------------------------------------------------
     scenarios = _service.get_all_scenarios()
     scenario_titles = {s.scenario_id: s.title for s in scenarios}
     selected_id = st.selectbox(
@@ -40,14 +49,16 @@ def render() -> None:
 
     scenario = _service.get_scenario(selected_id)
 
-    # Reset result when scenario changes
+    # Reset result when scenario changes (but NOT the cumulative score)
     prev_scenario = st.session_state.get("detective_prev_scenario")
     if prev_scenario != selected_id:
         st.session_state["detective_result"] = None
         st.session_state["detective_selections"] = []
         st.session_state["detective_prev_scenario"] = selected_id
 
+    # ------------------------------------------------------------------
     # Show the message
+    # ------------------------------------------------------------------
     st.markdown("#### 📩 Read this message carefully:")
     st.markdown(
         f'<div style="'
@@ -59,7 +70,9 @@ def render() -> None:
 
     st.markdown("")
 
+    # ------------------------------------------------------------------
     # Phrase selection
+    # ------------------------------------------------------------------
     st.markdown("#### 🔎 Which phrases look suspicious to you?")
     st.caption("Select all that apply, then click Submit.")
 
@@ -79,7 +92,6 @@ def render() -> None:
     with col_reset:
         if st.button("Reset", use_container_width=True):
             st.session_state["detective_result"] = None
-            # Clear all phrase checkboxes for this scenario
             for i in range(len(scenario.phrases)):
                 key = f"detective_phrase_{selected_id}_{i}"
                 if key in st.session_state:
@@ -92,18 +104,26 @@ def render() -> None:
         else:
             result = _service.score_attempt(scenario, selected_indices)
             st.session_state["detective_result"] = result
-            # Update running score
-            st.session_state["detective_score_total"] += result.score
-            st.session_state["detective_challenges_done"] += 1
 
+            # B5 fix: only count each scenario once in the session score.
+            # Retrying the same scenario does NOT re-increment the totals.
+            scored_ids: set = st.session_state["detective_scored_ids"]
+            if selected_id not in scored_ids:
+                st.session_state["detective_score_total"] += result.score
+                st.session_state["detective_challenges_done"] += 1
+                scored_ids.add(selected_id)
+                st.session_state["detective_scored_ids"] = scored_ids
+
+    # ------------------------------------------------------------------
     # Show result if available
+    # ------------------------------------------------------------------
     detective_result = st.session_state.get("detective_result")
     if detective_result is not None:
         _render_result(detective_result, scenario, selected_indices)
 
 
 def _render_result(result, scenario, selected_indices: list[int]) -> None:
-    """Render the scoring result and explanation."""
+    """Render the scoring result, per-phrase WHY explanations, and tactic context."""
     st.divider()
     st.subheader("📊 Your Result")
 
@@ -123,44 +143,83 @@ def _render_result(result, scenario, selected_indices: list[int]) -> None:
     )
     st.markdown("")
 
-    # Breakdown table
+    # Summary metrics
     col1, col2, col3 = st.columns(3)
     col1.metric("Correct clues found", f"{result.correct_count} / {result.total_correct}")
     col2.metric("False alarms", len(result.false_positive_indices))
     col3.metric("Clues missed", len(result.missed_indices))
 
-    # Show what was correct / missed
-    st.markdown("#### 🔑 Answer Key")
+    # ------------------------------------------------------------------
+    # Per-phrase answer key with WHY explanations
+    # ------------------------------------------------------------------
+    st.markdown("#### 🔑 Answer Key — Why each phrase is or is not suspicious")
 
     for i, phrase in enumerate(scenario.phrases):
         is_correct = i in scenario.correct_phrase_indices
         was_selected = i in selected_indices
 
         if is_correct and was_selected:
-            st.markdown(f'✅ **"{phrase}"** — Suspicious (you spotted it!)')
+            st.markdown(
+                f'<div style="background:#eafaf1; border-left:4px solid #27ae60; '
+                f'padding:8px 14px; margin:4px 0; border-radius:4px;">'
+                f'✅ <strong>"{phrase}"</strong> — '
+                f"<em>Suspicious — you spotted it!</em>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
         elif is_correct and not was_selected:
-            st.markdown(f'❌ **"{phrase}"** — Suspicious (you missed this one)')
+            st.markdown(
+                f'<div style="background:#fdf0ef; border-left:4px solid #e74c3c; '
+                f'padding:8px 14px; margin:4px 0; border-radius:4px;">'
+                f'❌ <strong>"{phrase}"</strong> — '
+                f"<em>Suspicious — you missed this one</em>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
         elif not is_correct and was_selected:
-            st.markdown(f'⚠️ "{phrase}" — Not suspicious (this was a false alarm)')
+            st.markdown(
+                f'<div style="background:#fef9e7; border-left:4px solid #f39c12; '
+                f'padding:8px 14px; margin:4px 0; border-radius:4px;">'
+                f'⚠️ "{phrase}" — '
+                f"<em>Not suspicious (false alarm)</em>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
         else:
-            st.markdown(f'○ "{phrase}" — Not suspicious')
+            st.markdown(
+                f'<div style="background:#f8f9fa; border-left:4px solid #dee2e6; '
+                f'padding:8px 14px; margin:4px 0; border-radius:4px;">'
+                f'○ "{phrase}" — <em>Not suspicious</em>'
+                f"</div>",
+                unsafe_allow_html=True,
+            )
 
-    # Detailed explanation
-    st.markdown("#### 💡 Explanation")
+    # ------------------------------------------------------------------
+    # Detailed manipulation explanation — teaches the WHY
+    # ------------------------------------------------------------------
+    st.markdown("#### 💡 How This Scam Works — The Manipulation Behind It")
     st.markdown(scenario.explanation)
 
-    # Link to Learn section
+    # ------------------------------------------------------------------
+    # Learn card linked to the scenario's primary tactic
+    # ------------------------------------------------------------------
     if scenario.tactic_id:
-        st.markdown("#### 📚 Learn More About This Tactic")
+        st.markdown("#### 📚 Deep Dive: Learn About This Tactic")
         render_learn_card(scenario.tactic_id)
 
-    # Running score in session
-    total = st.session_state.get("detective_score_total", 0)
+    # ------------------------------------------------------------------
+    # Running session score (only shown after at least one scenario scored)
+    # ------------------------------------------------------------------
     done = st.session_state.get("detective_challenges_done", 0)
+    total = st.session_state.get("detective_score_total", 0)
+    scored_ids: set = st.session_state.get("detective_scored_ids", set())
+
     if done > 0:
         average = round(total / done)
+        already_scored = selected_id in scored_ids
+        retry_note = " (retried — score not recounted)" if already_scored else ""
         st.divider()
         st.caption(
-            f"🏅 Session progress: {done} challenge(s) completed — "
-            f"average score {average}/100"
+            f"🏅 Session progress: {done} unique scenario(s) completed — "
+            f"average score {average}/100{retry_note}"
         )

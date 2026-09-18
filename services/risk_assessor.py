@@ -10,12 +10,17 @@ from data.models import Tactic
 # Severity ladder used for comparison
 _SEVERITY_ORDER = {"Low": 0, "Medium": 1, "High": 2, "Unknown": 1}
 
-# Tactic IDs that are always treated as high-severity
+# Tactic IDs that are always treated as high-severity.
+# AUTHORITY and IMPERSONATION are included because impersonating a government
+# body or trusted institution is a strong signal of fraud, especially in India
+# where KYC / tax-authority scams are widespread.
 HIGH_SEVERITY_TACTIC_IDS: list[str] = [
     "CREDENTIAL_REQUEST",
     "MONEY_REQUEST",
     "FEAR",
     "SUSPICIOUS_LINK",
+    "AUTHORITY",
+    "IMPERSONATION",
 ]
 
 

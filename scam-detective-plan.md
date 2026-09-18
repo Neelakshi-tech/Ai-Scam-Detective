@@ -9,7 +9,7 @@ The application also includes a Detective Mode where the user actively identifie
 suspicious clues in a pre-written sample message, and a Learn page with static
 educational content about common scam tactics.
 
-Stack: Python 3.11+, Streamlit, OpenAI or IBM watsonx.ai API, pytest, python-dotenv.
+Stack: Python 3.11+, Streamlit, Google Gemini API (google-genai SDK), pytest, python-dotenv.
 
 Architecture: three layers — UI (Streamlit pages + shared components), Business
 Logic (services), AI (prompt builder + API client + response parser). Data models
@@ -631,9 +631,9 @@ Expected Outcomes:
     - streamlit run app.py starts without errors (empty shell app)
 
 Todo:
-    1. Create requirements.txt (streamlit, openai or ibm-watsonx-ai, python-dotenv, pytest)
+    1. Create requirements.txt (streamlit, google-genai, python-dotenv, pytest)
     2. Create .gitignore
-    3. Create .env.example with OPENAI_API_KEY=your_key_here placeholder
+    3. Create .env.example with GEMINI_API_KEY=your_key_here placeholder
     4. Create all package directories with __init__.py files
     5. Create empty app.py that renders "AI Scam Detective" as a title
     6. Update README.md with setup instructions
