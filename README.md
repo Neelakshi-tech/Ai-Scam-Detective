@@ -8,6 +8,12 @@ fake government notices, and work-from-home job scams.
 
 ---
 
+## Presentation
+
+📊 [View Project Presentation (Google Slides)](https://docs.google.com/presentation/d/1HPo00dNnm7IppKXgLOZsoauyaaMxNSF3/edit?usp=sharing&ouid=105503233833147575287&rtpof=true&sd=true)
+
+---
+
 ## Team
 
 **Team name:** DuoByte
