@@ -135,6 +135,41 @@ AI_SCAM_DETECTIVE/
 
 ---
 
+## Built with IBM Bob
+
+IBM Bob was the primary AI development partner used throughout this project — from initial architecture through implementation, debugging, and iterative refinement. All three of Bob's built-in modes were used in the way each is designed to be used.
+
+### Plan mode — architecture and technical specification
+
+The project started in **Plan mode**, Bob's read-only planning mode for designing architecture before writing any code. A natural-language brief describing the goal was submitted to Bob. Bob read the brief, asked clarifying questions about scope and complexity trade-offs, and produced [`scam-detective-plan.md`](scam-detective-plan.md): a structured implementation plan covering the full three-tier architecture, all data models, module responsibilities, AI prompt design, risk assessment rules, a 13-subtask ordered implementation sequence, a unit test plan, and five pre-written India-context demo messages. This document became the persistent source of truth for every subsequent coding session.
+
+### Agent mode — feature implementation and debugging
+
+With the plan approved, each implementation subtask was executed in **Agent mode** — Bob's code-writing mode that reads, creates, and modifies files across the full codebase. Bob implemented every layer:
+
+- **Data layer:** `data/models.py` (Python dataclasses), `data/scenarios.py` (India-context Detective Mode scenarios), `data/tactics_library.py` (six static tactic education cards).
+- **Services layer:** `services/validator.py`, `services/risk_assessor.py`, `services/analysis_service.py`, `services/detective_service.py`.
+- **AI layer:** `ai/prompts.py` with the structured Gemini system prompt and user prompt template, and `ai/ai_analyzer.py` with the full `AIAnalyzer` class including the Gemini API call, enforced JSON schema, and a JSON-from-prose fallback parser.
+- **UI layer:** `ui/components.py` with all shared Streamlit rendering functions, and the three view modules in `views/`.
+- **App shell:** `app.py` with page config, custom CSS theming, sidebar navigation, session state initialisation, and lazy-import page routing.
+
+Agent mode was also used for every bug fix:
+
+- **Retired Gemini model (404 error):** Bob identified the retired model name, updated the default to `gemini-3.6-flash`, and added an automatic model-repair path in `AIAnalyzer` that detects legacy names and retries transparently.
+- **HTML injection bypassing validation:** Bob found that pasting HTML-rich clipboard content allowed text that passed the character-count check but contained no meaningful content. A plain-text extraction step was added to the validator.
+- **Gemini partial-JSON responses:** Bob designed and implemented the JSON-from-prose fallback parser that uses regex extraction to salvage well-formed JSON embedded in a larger prose response.
+- **Streamlit multi-page nav conflict:** Bob diagnosed the root cause (Streamlit's automatic `pages/` folder detection) and applied the minimal targeted fix — renaming the folder to `_pages_disabled/` — without touching any other file.
+
+### Ask mode — codebase exploration
+
+**Ask mode** — Bob's read-only explanation mode — was used throughout development to interrogate the codebase safely before making changes. This included tracing the Streamlit sidebar conflict, understanding session state flow across modules, and confirming the orchestration relationship between `AnalysisService`, `AIAnalyzer`, and `RiskAssessor` before the test suite was written.
+
+### Test generation
+
+Bob wrote the full pytest suite in Agent mode, covering 70+ unit tests across `tests/test_validator.py`, `tests/test_risk_assessor.py`, `tests/test_ai_analyzer.py`, and `tests/test_detective_service.py`. All AI analyzer tests use mock Gemini clients so the entire suite runs offline without a real API key.
+
+---
+
 ## Demo messages (India-context, fictional)
 
 The Analyze page includes these pre-loaded demo messages:
