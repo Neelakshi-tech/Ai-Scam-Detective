@@ -8,6 +8,14 @@ fake government notices, and work-from-home job scams.
 
 ---
 
+## Team
+
+**Team name:** DuoByte
+
+**Members:** Neelakshi · Nikita
+
+---
+
 ## What it does
 
 **AI Scam Detective** guides you through four stages:
